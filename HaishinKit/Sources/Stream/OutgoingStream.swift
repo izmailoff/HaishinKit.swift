@@ -23,9 +23,43 @@ package final class OutgoingStream {
     /// The audio input format.
     package private(set) var audioInputFormat: CMFormatDescription?
 
+    /// A hook onto the COMPRESSED video access units, between the encoder and the muxer.
+    ///
+    /// TVC fork addition. HaishinKit's public surface stops at `videoSettings` and `StreamOutput`,
+    /// which carry raw/preview sample buffers — there is no way for an application to see, count or
+    /// modify what the VideoToolbox encoder actually produced. Two things need exactly that:
+    ///
+    /// 1. **Encoder statistics.** "Is the encoder meeting its target?" cannot be answered from
+    ///    egress: a still scene encodes small on a perfect link, and a congested link carries a
+    ///    healthy encoder's output badly. Only the encoded AUs say what the encoder produced.
+    /// 2. **Capture-timestamp SEI.** Stamping each AU with its sensor capture time needs a splice
+    ///    point on the compressed bitstream (the Android RootEncoder fork calls its equivalent hook
+    ///    `videoDataTransformer`, and this deliberately shares the name).
+    ///
+    /// Return the buffer unchanged to observe, a new buffer to replace it, or nil to drop it.
+    /// Called on the task that drains the encoder, once per encoded access unit. Nil transformer
+    /// (the default) leaves the original sequence completely untouched — no extra task, no copy.
+    package var videoDataTransformer: (@Sendable (CMSampleBuffer) -> CMSampleBuffer?)?
+
     /// The asynchronous sequence for video output.
     package var videoOutputStream: AsyncStream<CMSampleBuffer> {
-        return videoCodec.outputStream
+        // `videoCodec.outputStream` re-creates the sequence and re-assigns the codec's continuation
+        // on every access, so it must be read exactly once here.
+        let source = videoCodec.outputStream
+        guard let transform = videoDataTransformer else {
+            return source
+        }
+        return AsyncStream { continuation in
+            let task = Task {
+                for await buffer in source {
+                    if let out = transform(buffer) {
+                        continuation.yield(out)
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     /// Specifies the video compression properties.

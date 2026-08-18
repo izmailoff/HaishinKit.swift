@@ -227,6 +227,15 @@ public actor RTMPStream {
     private(set) var id: UInt32 = RTMPStream.defaultID
     package lazy var incoming = IncomingStream(self)
     package lazy var outgoing = OutgoingStream()
+
+    /// Install a hook onto the compressed video access units (TVC fork addition).
+    ///
+    /// See `OutgoingStream.videoDataTransformer`. Set before `publish` — the sequence is built when
+    /// publishing starts, so a transformer installed afterwards is not picked up until the next
+    /// publish. Pass nil to remove it and restore the untouched encoder output.
+    public func setVideoDataTransformer(_ transform: (@Sendable (CMSampleBuffer) -> CMSampleBuffer?)?) {
+        outgoing.videoDataTransformer = transform
+    }
     private weak var connection: RTMPConnection?
 
     private var audioFormat: AVAudioFormat? {
