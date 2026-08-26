@@ -67,7 +67,20 @@ package final actor NetworkMonitor {
                 total += 1
             }
             if total == measureInterval - 1 {
-                return .publishInsufficientBWOccured(report: eventReport)
+                // TVC fork: direction alone is not congestion. With a 1s GOP sampled at this
+                // monitor's 1 Hz cadence, the send queue is a sawtooth whose sampled value can
+                // walk upward in tiny strictly-increasing steps for many consecutive samples
+                // (clock drift slides the sample phase along the sawtooth), which read here as
+                // sustained congestion on a link with proven headroom. Require the backlog to
+                // have GROWN by a meaningful share of a second's egress across the window —
+                // real congestion accumulates queue at the rate of the capacity deficit and
+                // clears the floor immediately; keyframe-phase ripple never does.
+                let growth = (previousQueueBytesOut.last ?? 0) - (previousQueueBytesOut.first ?? 0)
+                let floor = max(currentBytesOutPerSecond / 8, 16_384)
+                if growth >= floor {
+                    return .publishInsufficientBWOccured(report: eventReport)
+                }
+                return .status(report: eventReport)
             } else if total == 0 {
                 return .status(report: eventReport)
             }
