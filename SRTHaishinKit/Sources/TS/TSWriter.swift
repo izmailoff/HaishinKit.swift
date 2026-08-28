@@ -26,7 +26,7 @@ final class TSWriter {
             var data = ESSpecificData()
             data.streamType = audioFormat.formatDescription.streamType
             data.elementaryPID = Self.defaultAudioPID
-            pmt.elementaryStreamSpecificData.append(data)
+            setElementaryStream(data)
             audioContinuityCounter = 0
             writeProgramIfNeeded()
         }
@@ -40,7 +40,7 @@ final class TSWriter {
             var data = ESSpecificData()
             data.streamType = videoFormat.streamType
             data.elementaryPID = Self.defaultVideoPID
-            pmt.elementaryStreamSpecificData.append(data)
+            setElementaryStream(data)
             videoContinuityCounter = 0
             writeProgramIfNeeded()
         }
@@ -177,6 +177,27 @@ final class TSWriter {
         }
 
         write(bytes)
+    }
+
+    /// Registers an elementary stream in the PMT: one row per PID, replacing whatever that PID
+    /// had before.
+    ///
+    /// This used to `append`. That was harmless while a format description changed once per
+    /// stream (audio and video each arrive once, at start-up) but it left every earlier row in
+    /// place, so a stream whose video format changed N times carried N rows for PID 256 in every
+    /// PMT written afterwards. Mid-stream resolution changes are now a feature, not a fault: the
+    /// TVC adaptive-resolution work drops the encoder to a lower rung under congestion by swapping
+    /// the VTCompressionSession at a new `videoSize` (hot, the SRT socket survives), and every
+    /// swap lands here as a new CMFormatDescription. Demuxers key by PID and shrug off the
+    /// duplicates, but the table grew for the life of the publish and stopped describing the
+    /// program. The continuity-counter reset and the PMT rewrite in the callers are deliberate
+    /// and stay: the PMT that follows the change must carry the current row, and the new
+    /// session's first IDR carries the new SPS in-band (see PacketizedElementaryStream), which is
+    /// what lets the receiver re-init without a reconnect.
+    /// [[gotcha:ts-pmt-row-per-pid]]
+    private func setElementaryStream(_ data: ESSpecificData) {
+        pmt.elementaryStreamSpecificData.removeAll { $0.elementaryPID == data.elementaryPID }
+        pmt.elementaryStreamSpecificData.append(data)
     }
 
     private func rotateFileHandle(_ timestamp: CMTime) {
