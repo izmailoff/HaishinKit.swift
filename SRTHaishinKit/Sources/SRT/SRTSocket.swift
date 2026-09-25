@@ -289,10 +289,16 @@ extension SRTSocket: NetworkTransportReporter {
     func makeNetworkTransportReport() -> NetworkTransportReport {
         _ = bstats()
         let performanceData = self.performanceData
+        // TVC fork: the receiver's evidence too — loss (NAKs) against unique packets sent, and RTT.
+        // The send buffer alone only grows while libsrt holds packets; behind a policing router the
+        // loss is where congestion shows first.
         return .init(
             queueBytesOut: Int(performanceData.byteSndBuf),
             totalBytesIn: Int(performanceData.byteRecvTotal),
-            totalBytesOut: Int(performanceData.byteSentTotal)
+            totalBytesOut: Int(performanceData.byteSentTotal),
+            totalPacketsSent: Int(max(0, performanceData.pktSentTotal - Int64(performanceData.pktRetransTotal))),
+            totalPacketsLost: Int(performanceData.pktSndLossTotal),
+            rttMs: performanceData.msRTT
         )
     }
 

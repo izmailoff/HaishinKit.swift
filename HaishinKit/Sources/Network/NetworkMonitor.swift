@@ -55,13 +55,16 @@ package final actor NetworkMonitor {
         previousTotalBytesIn = totalBytesIn
         previousTotalBytesOut = totalBytesOut
         previousQueueBytesOut.append(queueBytesOut)
-        let eventReport = NetworkMonitorReport(
+        var eventReport = NetworkMonitorReport(
             totalBytesIn: totalBytesIn,
             totalBytesOut: totalBytesOut,
             currentQueueBytesOut: queueBytesOut,
             currentBytesInPerSecond: currentBytesInPerSecond,
             currentBytesOutPerSecond: currentBytesOutPerSecond
         )
+        eventReport.totalPacketsSent = report.totalPacketsSent
+        eventReport.totalPacketsLost = report.totalPacketsLost
+        eventReport.rttMs = report.rttMs
         // TVC fork: direction alone is not congestion — magnitude is. Two triggers, each blind
         // where the other sees:
         //
